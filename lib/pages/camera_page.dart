@@ -1,108 +1,117 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:typed_data';
+import 'dart:convert';
 import 'package:camera/camera.dart';
-import 'package:tflite/tflite.dart';
 
-class YoloDetectionPage extends StatefulWidget {
+class FireDetectionPage extends StatefulWidget {
   @override
-  _YoloDetectionPageState createState() => _YoloDetectionPageState();
+  _FireDetectionPageState createState() => _FireDetectionPageState();
 }
 
-class _YoloDetectionPageState extends State<YoloDetectionPage> {
-  CameraController? _cameraController;
-  List<dynamic>? _recognitions;
-  bool _isDetecting = false;
+class _FireDetectionPageState extends State<FireDetectionPage> {
+  WebSocketChannel? channel;
+  CameraController? cameraController;
+  List<dynamic> predictions = [];
 
   @override
   void initState() {
     super.initState();
-    loadModel();
-    initCamera();
+    initializeCamera();
+    connectWebSocket();
   }
 
-  Future<void> loadModel() async {
-    await Tflite.loadModel(
-      model: "assets/models/yolo_wildfire16.tflite",
-      labels: "assets/models/labels.txt",
-    );
-  }
-
-  Future<void> initCamera() async {
+  void initializeCamera() async {
     final cameras = await availableCameras();
-    _cameraController = CameraController(cameras[0], ResolutionPreset.medium);
-
-    await _cameraController!.initialize();
-    _cameraController!.startImageStream((image) {
-      if (!_isDetecting) {
-        _isDetecting = true;
-        runModelOnFrame(image);
+    cameraController = CameraController(cameras[0], ResolutionPreset.medium);
+    await cameraController?.initialize();
+    cameraController?.startImageStream((image) async {
+      final yuvBytes = concatenatePlanes(image.planes);
+      if (yuvBytes != null) {
+        final frameData = json.encode({
+          'width': image.width,
+          'height': image.height,
+          'yuvBytes': base64.encode(yuvBytes),
+        });
+        // Pastikan channel ada sebelum mengirim data
+        if (channel != null) {
+          channel?.sink.add(frameData);
+        }
       }
     });
-    setState(() {});
   }
 
-  Future<void> runModelOnFrame(CameraImage image) async {
-    final recognitions = await Tflite.detectObjectOnFrame(
-      bytesList: image.planes.map((plane) => plane.bytes).toList(),
-      model: "YOLO",
-      imageHeight: image.height,
-      imageWidth: image.width,
-      imageMean: 0.0,
-      imageStd: 255.0,
-      numResultsPerClass: 1,
-      threshold: 0.5,
+  // Menggabungkan data dari plane gambar
+  Uint8List concatenatePlanes(List<Plane> planes) {
+    int totalBytes = 0;
+    for (Plane plane in planes) {
+      totalBytes += plane.bytes.length;
+    }
+
+    final allBytes = Uint8List(totalBytes);
+    int offset = 0;
+    for (Plane plane in planes) {
+      allBytes.setRange(offset, offset + plane.bytes.length, plane.bytes);
+      offset += plane.bytes.length;
+    }
+    return allBytes;
+  }
+
+  void connectWebSocket() {
+    channel = WebSocketChannel.connect(
+      Uri.parse(
+          'ws://192.168.106.179:8000/ws/detect'), // Ganti dengan IP server lokal
     );
-    setState(() {
-      _recognitions = recognitions;
-      _isDetecting = false;
+
+    channel!.stream.listen((message) {
+      setState(() {
+        predictions = json.decode(message);
+      });
+    }, onError: (error) {
+      print("WebSocket error: $error");
+    }, onDone: () {
+      print("WebSocket connection closed");
     });
   }
 
   @override
   void dispose() {
-    Tflite.close();
-    _cameraController?.dispose();
+    cameraController?.dispose();
+    channel?.sink.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("YOLO Detection")),
-      body: _cameraController == null || !_cameraController!.value.isInitialized
-          ? Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                CameraPreview(_cameraController!),
-                _recognitions != null
-                    ? Stack(
-                        children: _recognitions!.map((rec) {
-                          return Positioned(
-                            left: rec["rect"]["x"] *
-                                MediaQuery.of(context).size.width,
-                            top: rec["rect"]["y"] *
-                                MediaQuery.of(context).size.height,
-                            width: rec["rect"]["w"] *
-                                MediaQuery.of(context).size.width,
-                            height: rec["rect"]["h"] *
-                                MediaQuery.of(context).size.height,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.red, width: 3),
-                              ),
-                              child: Text(
-                                "${rec["detectedClass"]} ${(rec["confidenceInClass"] * 100).toStringAsFixed(0)}%",
-                                style: TextStyle(
-                                  backgroundColor: Colors.red,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      )
-                    : Container(),
-              ],
-            ),
+      appBar: AppBar(title: Text('Deteksi Kebakaran Hutan')),
+      body: Stack(
+        children: [
+          cameraController == null
+              ? Center(child: CircularProgressIndicator())
+              : CameraPreview(cameraController!),
+          // Menampilkan bounding box deteksi
+          ...predictions.map((pred) {
+            final box = pred['box'];
+            return Positioned(
+              left: box[0].toDouble(),
+              top: box[1].toDouble(),
+              child: Container(
+                width: box[2].toDouble(),
+                height: box[3].toDouble(),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.red, width: 2),
+                ),
+                child: Text(
+                  '${pred['label']} (${(pred['confidence'] * 100).toStringAsFixed(1)}%)',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
     );
   }
 }

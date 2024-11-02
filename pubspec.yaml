@@ -37,7 +37,10 @@ dependencies:
   maplibre_gl: ^0.20.0
   http: ^0.13.4
   camera: ^0.11.0+2
+  tflite_flutter: ^0.11.0
   tflite: ^1.1.2
+  web_socket_channel: ^3.0.1
+  image: ^4.3.0
 
 dev_dependencies:
   flutter_test:
@@ -64,7 +67,12 @@ flutter:
   assets:
     - assets/icons/ic_fire.png
     - assets/models/yolo_wildfire16.tflite
+    - assets/models/FireDetection.tflite
+    - assets/models/yolov2_tiny.tflite
+    - assets/models/yolov2_tiny.txt
+    - assets/models/detect.tflite
     - assets/models/labels.txt
+    - assets/models/labelmap.txt
     - assets/icons/ic_heimdal.png
 
   # An image asset can refer to one or more resolution-specific "variants", see

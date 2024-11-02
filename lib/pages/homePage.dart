@@ -17,7 +17,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   final _screens = const [
-   MapPage(),
+    MapPage(),
     Center(child: Text("Settings Masih Proses")),
   ];
 
@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: _screens[_currentScreenIndex],
       bottomNavigationBar: NavigationBar(
         elevation: 8,
-        backgroundColor: Color.fromARGB(255, 255, 197, 111),
+        backgroundColor: Color.fromARGB(255, 255, 255, 255),
         destinations: _destinations,
         selectedIndex: _currentScreenIndex,
         onDestinationSelected: (int index) {

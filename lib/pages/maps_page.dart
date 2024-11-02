@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:heimdal/pages/camera_page.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:heimdal/pages/maps_api_handler.dart';
-import 'package:camera/camera.dart';
 
 const apiKey = "Ac6IGn7Q4e7Vgn7vhsYY";
 const styleUrl = "https://api.maptiler.com/maps/satellite/style.json";
@@ -56,14 +55,11 @@ class MapState extends State<Map> {
 
   // Method untuk membuka kamera dan merekam video
   Future<void> _recordVideo() async {
-    // Mendapatkan daftar kamera
-    final cameras = await availableCameras();
-
     // Membuka halaman rekaman video
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => YoloDetectionPage(),
+        builder: (context) => FireDetectionPage(),
       ),
     );
   }
