@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:heimdal/pages/camera_page.dart';
+import 'package:heimdal/pages/homePage.dart';
 
 void main() {
   runApp(MyApp());
@@ -13,7 +13,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: YoloScannerPage(),
+      home: HomeScreen(),
     );
   }
 }
