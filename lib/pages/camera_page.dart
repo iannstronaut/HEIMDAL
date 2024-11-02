@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
 import 'dart:convert';
-import 'package:camera/camera.dart';
+import 'dart:io';
 
 class FireDetectionPage extends StatefulWidget {
   @override
@@ -11,106 +11,159 @@ class FireDetectionPage extends StatefulWidget {
 }
 
 class _FireDetectionPageState extends State<FireDetectionPage> {
-  WebSocketChannel? channel;
-  CameraController? cameraController;
-  List<dynamic> predictions = [];
+  String? videoResultUrl;
+  final ImagePicker _picker = ImagePicker();
+  File? _videoFile;
+  bool _isUploading = false;
+  String _uploadStatus = '';
+
+  Future<void> recordVideo() async {
+    final XFile? video = await _picker.pickVideo(source: ImageSource.camera);
+    if (video != null) {
+      setState(() {
+        _videoFile = File(video.path);
+      });
+      await uploadVideo(video.path);
+    }
+  }
+
+  Future<void> uploadVideo(String filePath) async {
+    setState(() {
+      _isUploading = true;
+      _uploadStatus = 'Mengunggah video...';
+    });
+
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse(
+            'http://192.168.78.48:8000/upload-video/'), // Pastikan alamat IP benar
+      );
+
+      request.files.add(await http.MultipartFile.fromPath('file', filePath));
+
+      final response = await request.send();
+
+      if (response.statusCode == 200) {
+        final responseData = await response.stream.bytesToString();
+        final jsonResponse = json.decode(responseData);
+        setState(() {
+          videoResultUrl =
+              'http://192.168.78.48:8000' + jsonResponse['output_video_url'];
+          _uploadStatus = 'Video berhasil diunggah';
+        });
+        
+        // Panggil showResultVideo untuk langsung alihkan ke pemutar video
+        showResultVideo();
+      } else {
+        setState(() {
+          _uploadStatus =
+              'Gagal mengunggah video: ${response.statusCode}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _uploadStatus = 'Error mengunggah video: $e';
+      });
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  void showResultVideo() {
+    if (videoResultUrl != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VideoPlayerScreen(videoUrl: videoResultUrl!),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Deteksi Kebakaran Hutan'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(
+              onPressed: recordVideo,
+              child: Text('Rekam Video'),
+            ),
+            SizedBox(height: 20),
+            if (_videoFile != null) Text('Video direkam: ${_videoFile!.path}'),
+            SizedBox(height: 20),
+            if (_isUploading) CircularProgressIndicator(),
+            SizedBox(height: 20),
+            Text(_uploadStatus),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class VideoPlayerScreen extends StatefulWidget {
+  final String videoUrl;
+
+  VideoPlayerScreen({required this.videoUrl});
+
+  @override
+  _VideoPlayerScreenState createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  late VideoPlayerController _controller;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    initializeCamera();
-    connectWebSocket();
-  }
-
-  void initializeCamera() async {
-    final cameras = await availableCameras();
-    cameraController = CameraController(cameras[0], ResolutionPreset.medium);
-    await cameraController?.initialize();
-    cameraController?.startImageStream((image) async {
-      final yuvBytes = concatenatePlanes(image.planes);
-      if (yuvBytes != null) {
-        final frameData = json.encode({
-          'width': image.width,
-          'height': image.height,
-          'yuvBytes': base64.encode(yuvBytes),
+    _controller = VideoPlayerController.networkUrl(Uri.parse("http://192.168.78.48:8000/download-video/output_video.mp4"))
+      ..initialize().then((_) {
+        setState(() {
+          _isLoading = false;
         });
-        // Pastikan channel ada sebelum mengirim data
-        if (channel != null) {
-          channel?.sink.add(frameData);
-        }
-      }
-    });
-  }
-
-  // Menggabungkan data dari plane gambar
-  Uint8List concatenatePlanes(List<Plane> planes) {
-    int totalBytes = 0;
-    for (Plane plane in planes) {
-      totalBytes += plane.bytes.length;
-    }
-
-    final allBytes = Uint8List(totalBytes);
-    int offset = 0;
-    for (Plane plane in planes) {
-      allBytes.setRange(offset, offset + plane.bytes.length, plane.bytes);
-      offset += plane.bytes.length;
-    }
-    return allBytes;
-  }
-
-  void connectWebSocket() {
-    channel = WebSocketChannel.connect(
-      Uri.parse(
-          'ws://192.168.106.179:8000/ws/detect'), // Ganti dengan IP server lokal
-    );
-
-    channel!.stream.listen((message) {
-      setState(() {
-        predictions = json.decode(message);
+        _controller.play();
       });
-    }, onError: (error) {
-      print("WebSocket error: $error");
-    }, onDone: () {
-      print("WebSocket connection closed");
-    });
   }
 
   @override
   void dispose() {
-    cameraController?.dispose();
-    channel?.sink.close();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Deteksi Kebakaran Hutan')),
-      body: Stack(
-        children: [
-          cameraController == null
-              ? Center(child: CircularProgressIndicator())
-              : CameraPreview(cameraController!),
-          // Menampilkan bounding box deteksi
-          ...predictions.map((pred) {
-            final box = pred['box'];
-            return Positioned(
-              left: box[0].toDouble(),
-              top: box[1].toDouble(),
-              child: Container(
-                width: box[2].toDouble(),
-                height: box[3].toDouble(),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.red, width: 2),
-                ),
-                child: Text(
-                  '${pred['label']} (${(pred['confidence'] * 100).toStringAsFixed(1)}%)',
-                  style: TextStyle(color: Colors.white),
-                ),
+      appBar: AppBar(
+        title: Text('Hasil Video'),
+      ),
+      body: Center(
+        child: _isLoading
+            ? CircularProgressIndicator()
+            : AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
               ),
-            );
-          }).toList(),
-        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _controller.value.isPlaying ? _controller.pause() : _controller.play();
+          });
+        },
+        child: Icon(
+          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+        ),
       ),
     );
   }

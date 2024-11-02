@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:heimdal/pages/homePage.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
 
 void main() {
   runApp(MyApp());
+  Gemini.init(apiKey: 'AIzaSyCGuGaGORzzplvICRSfu1pltpvaRf06YFQ');
 }
 
 class MyApp extends StatelessWidget {

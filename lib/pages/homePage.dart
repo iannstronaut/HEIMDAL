@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:heimdal/pages/gemini.dart';
 import 'package:heimdal/pages/maps_page.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -18,7 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _screens = const [
     MapPage(),
-    Center(child: Text("Settings Masih Proses")),
+    GeminiClass(),
   ];
 
   late int _currentScreenIndex;
