@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:heimdal/pages/camera_page.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:heimdal/pages/maps_api_handler.dart';
 import 'package:camera/camera.dart';
@@ -57,13 +58,12 @@ class MapState extends State<Map> {
   Future<void> _recordVideo() async {
     // Mendapatkan daftar kamera
     final cameras = await availableCameras();
-    final firstCamera = cameras.first;
 
     // Membuka halaman rekaman video
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => VideoRecorder(camera: firstCamera),
+        builder: (context) => YoloDetectionPage(),
       ),
     );
   }
@@ -84,22 +84,6 @@ class MapState extends State<Map> {
         tooltip: 'Record Video',
         child: const Icon(Icons.videocam),
       ),
-    );
-  }
-}
-
-// Halaman untuk merekam video
-class VideoRecorder extends StatelessWidget {
-  final CameraDescription camera;
-
-  const VideoRecorder({super.key, required this.camera});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Record Video')),
-      body: const Center(
-          child: Text('Video recording feature to be implemented here')),
     );
   }
 }

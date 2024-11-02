@@ -1,123 +1,108 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:image/image.dart' as img;
+import 'package:tflite/tflite.dart';
 
-class YoloScannerPage extends StatefulWidget {
+class YoloDetectionPage extends StatefulWidget {
   @override
-  _YoloScannerPageState createState() => _YoloScannerPageState();
+  _YoloDetectionPageState createState() => _YoloDetectionPageState();
 }
 
-class _YoloScannerPageState extends State<YoloScannerPage> {
-  late CameraController _controller;
-  late Future<void> _initializeControllerFuture;
-  late Interpreter _interpreter;
-  List<CameraDescription> cameras = [];
-  bool isDetecting = false;
-  List<dynamic> detections = [];
+class _YoloDetectionPageState extends State<YoloDetectionPage> {
+  CameraController? _cameraController;
+  List<dynamic>? _recognitions;
+  bool _isDetecting = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
-    _loadModel();
+    loadModel();
+    initCamera();
   }
 
-  Future<void> _initializeCamera() async {
-    cameras = await availableCameras();
-    if (cameras.isNotEmpty) {
-      _controller = CameraController(
-        cameras[0], // Use the first available camera
-        ResolutionPreset.high,
-      );
-      _initializeControllerFuture = _controller.initialize();
-      await _initializeControllerFuture;
-
-      // Start the image stream after the camera is initialized
-      _controller.startImageStream((CameraImage image) {
-        if (!isDetecting) {
-          isDetecting = true;
-          _runModel(image);
-        }
-      });
-    } else {
-      // Handle the case when no cameras are available
-      print("No cameras available");
-    }
+  Future<void> loadModel() async {
+    await Tflite.loadModel(
+      model: "assets/models/yolo_wildfire16.tflite",
+      labels: "assets/models/labels.txt",
+    );
   }
 
-  Future<void> _loadModel() async {
-    _interpreter =
-        await Interpreter.fromAsset('assets/models/yolo_wildfire16.tflite');
-  }
+  Future<void> initCamera() async {
+    final cameras = await availableCameras();
+    _cameraController = CameraController(cameras[0], ResolutionPreset.medium);
 
-  void _runModel(CameraImage image) async {
-    // Convert CameraImage to a format suitable for the model
-    var inputImage = _preprocessImage(image);
-
-    // Prepare output buffer
-    var output = List.filled(1 * 10 * 4, 0)
-        .reshape([1, 10, 4]); // Adjust shape based on your model
-    _interpreter.run(inputImage, output);
-
-    // Process output
-    setState(() {
-      detections = output; // Store detections for rendering
-      isDetecting = false; // Reset detecting flag
+    await _cameraController!.initialize();
+    _cameraController!.startImageStream((image) {
+      if (!_isDetecting) {
+        _isDetecting = true;
+        runModelOnFrame(image);
+      }
     });
+    setState(() {});
   }
 
-  List<List<int>> _preprocessImage(CameraImage image) {
-    // Convert CameraImage to a format suitable for the model
-    // Resize and normalize the image
-    // This is a placeholder; implement your resizing logic here
-    return []; // Return the processed image data
+  Future<void> runModelOnFrame(CameraImage image) async {
+    final recognitions = await Tflite.detectObjectOnFrame(
+      bytesList: image.planes.map((plane) => plane.bytes).toList(),
+      model: "YOLO",
+      imageHeight: image.height,
+      imageWidth: image.width,
+      imageMean: 0.0,
+      imageStd: 255.0,
+      numResultsPerClass: 1,
+      threshold: 0.5,
+    );
+    setState(() {
+      _recognitions = recognitions;
+      _isDetecting = false;
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _interpreter.close();
+    Tflite.close();
+    _cameraController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Real-Time YOLO Scanner')),
-      body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return Stack(
+      appBar: AppBar(title: Text("YOLO Detection")),
+      body: _cameraController == null || !_cameraController!.value.isInitialized
+          ? Center(child: CircularProgressIndicator())
+          : Stack(
               children: [
-                CameraPreview(_controller),
-                ..._buildDetectionBoxes(),
+                CameraPreview(_cameraController!),
+                _recognitions != null
+                    ? Stack(
+                        children: _recognitions!.map((rec) {
+                          return Positioned(
+                            left: rec["rect"]["x"] *
+                                MediaQuery.of(context).size.width,
+                            top: rec["rect"]["y"] *
+                                MediaQuery.of(context).size.height,
+                            width: rec["rect"]["w"] *
+                                MediaQuery.of(context).size.width,
+                            height: rec["rect"]["h"] *
+                                MediaQuery.of(context).size.height,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.red, width: 3),
+                              ),
+                              child: Text(
+                                "${rec["detectedClass"]} ${(rec["confidenceInClass"] * 100).toStringAsFixed(0)}%",
+                                style: TextStyle(
+                                  backgroundColor: Colors.red,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      )
+                    : Container(),
               ],
-            );
-          } else {
-            return Center(child: CircularProgressIndicator());
-          }
-        },
-      ),
+            ),
     );
-  }
-
-  List<Widget> _buildDetectionBoxes() {
-    // Create bounding boxes for detected objects
-    return detections.map((detection) {
-      // Extract bounding box coordinates and draw them
-      return Positioned(
-        left: detection[0] * MediaQuery.of(context).size.width,
-        top: detection[1] * MediaQuery.of(context).size.height,
-        width: detection[2] * MediaQuery.of(context).size.width,
-        height: detection[3] * MediaQuery.of(context).size.height,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.red),
-          ),
-        ),
-      );
-    }).toList();
   }
 }
